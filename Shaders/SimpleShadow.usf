@@ -1,0 +1,118 @@
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/RayTracing/RayTracingCommon.ush"
+
+RaytracingAccelerationStructure TLAS;
+
+void SimpleShadowPS(
+	FScreenVertexOutput Input,
+	out float4 OutputColor : SV_Target0)
+{
+	float2 PixelPos = Input.Position.xy;
+
+	float3 CameraDir;
+	float3 DummyPos;
+	ReconstructTranslatedWorldPositionAndCameraDirectionFromDeviceZ(PixelPos, 0.1f, DummyPos, CameraDir);
+	
+	RayDesc PrimaryRay;
+	PrimaryRay.Origin = View.TranslatedWorldCameraOrigin;
+	PrimaryRay.Direction = CameraDir;
+	PrimaryRay.TMin = 0.0;
+	PrimaryRay.TMax = 1e20f;
+	
+	RayQuery<RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_FORCE_OPAQUE> q_primary;
+	q_primary.TraceRayInline(TLAS, RAY_FLAG_NONE, RAY_TRACING_MASK_OPAQUE, PrimaryRay);
+	q_primary.Proceed();
+	
+	float3 ShadowColor = float3(1.0f, 0.0f, 0.0f);
+	if (q_primary.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+	{
+		float HitT = q_primary.CommittedRayT();
+		float3 HitWorldPos = PrimaryRay.Origin + (PrimaryRay.Direction * HitT);
+
+		RayDesc ShadowRay;
+		ShadowRay.Origin = HitWorldPos;
+		ShadowRay.Direction = View.DirectionalLightDirection;
+		ShadowRay.TMin = 1.0f;
+		ShadowRay.TMax = 1e20f;
+		
+		RayQuery<RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> q_shadow;
+		q_shadow.TraceRayInline(TLAS, RAY_FLAG_NONE, RAY_TRACING_MASK_OPAQUE, ShadowRay);
+		q_shadow.Proceed();
+		if (q_shadow.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+		{
+			OutputColor = float4(ShadowColor, 1.0f);
+			return;
+		}
+	}
+	
+	OutputColor = float4(CalcSceneColor(Input.UV), 1.0f);
+}
+
+RWTexture2D<float4> OutputTexture;
+RAY_TRACING_ENTRY_RAYGEN(SimpleShadowRG)
+{
+	uint2 PixelCoord = DispatchRaysIndex().xy + View.ViewRectMin.xy;
+	float2 ScreenUV = PixelCoord * View.BufferSizeAndInvSize.zw;
+	float3 SceneColor = CalcSceneColor(ScreenUV);
+	float3 CameraDir;
+	float3 WorldPos;
+	ReconstructTranslatedWorldPositionAndCameraDirectionFromDeviceZ(PixelCoord, 0.001f, WorldPos, CameraDir);
+
+	FRayDesc PrimaryRay;
+	PrimaryRay.Origin = View.TranslatedWorldCameraOrigin;
+	PrimaryRay.Direction = CameraDir;
+	PrimaryRay.TMin = 0.0f;
+	PrimaryRay.TMax = 1e20f;
+	
+	FPackedMaterialClosestHitPayload Payload = (FPackedMaterialClosestHitPayload)0;
+	FRayCone RayCone = (FRayCone)0; 
+	RayCone.SpreadAngle = View.EyeToPixelSpreadAngle;
+
+	TraceMaterialRayPacked(
+		Payload,
+		TLAS,
+		RAY_FLAG_FORCE_OPAQUE,
+		RAY_TRACING_MASK_OPAQUE,
+		PrimaryRay,
+		RayCone,
+		false,
+		true
+		);
+	
+	//Payload.GetBaseColor();
+	//Payload.GetMetallic();
+	//Payload.GetRoughness();
+	//Payload.GetWorldNormal();
+	//Payload.GetBlendingMode();
+	//...
+	float3 ShadowColor = float3(1.0f, 0.0f, 0.0f);
+	if (Payload.IsHit())
+	{
+		float HitT = Payload.HitT;
+		float3 HitWorldPos = PrimaryRay.Origin + (PrimaryRay.Direction * HitT);
+		FPackedMaterialClosestHitPayload ShadowPayload = (FPackedMaterialClosestHitPayload)0;
+		FRayDesc ShadowRay;
+		ShadowRay.Origin = HitWorldPos;
+		ShadowRay.Direction = View.DirectionalLightDirection;
+		ShadowRay.TMin = 1.0f;
+		ShadowRay.TMax = 1e20f;
+		
+		TraceMaterialRayPacked(
+			ShadowPayload,
+			TLAS,
+			RAY_FLAG_FORCE_OPAQUE,
+			RAY_TRACING_MASK_OPAQUE,
+			ShadowRay,
+			RayCone,
+			false,
+			true
+			);
+		if (ShadowPayload.IsHit() && ShadowPayload.GetMetallic() > 0.5f)
+		{
+			OutputTexture[DispatchRaysIndex().xy] = float4(ShadowColor, 1.0f);
+			return;
+		}
+	}
+
+	OutputTexture[DispatchRaysIndex().xy] = float4(SceneColor, 1.0f);
+}
