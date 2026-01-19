@@ -23,7 +23,7 @@ The implementation uses `FSimpleShadowViewExtension` to manage the render passes
 
 ## Requirements
 
-- **Unreal Engine 5** (Specifically 5.7 as configured in `.uplugin`)
+- **Unreal Engine 5.7**
 - **Hardware Ray Tracing** enabled in the DefaultEngine.ini (`r.RayTracing=True`, `r.RayTracing.Shadows=True`).
 - **DirectX 12** (SM6)
 
