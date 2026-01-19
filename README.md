@@ -24,7 +24,7 @@ The implementation uses `FSimpleShadowViewExtension` to manage the render passes
 ## Requirements
 
 - **Unreal Engine 5** (Specifically 5.7 as configured in `.uplugin`)
-- **Hardware Ray Tracing** enabled in the project settings (`RHI_RAYTRACING=1`).
+- **Hardware Ray Tracing** enabled in the DefaultEngine.ini (`r.RayTracing=True`, `r.RayTracing.Shadows=True`).
 - **DirectX 12** (SM6)
 
 ## Installation
@@ -93,7 +93,7 @@ Unreal Engine 5向けのカスタムレイトレーシングシェーダープ�
 ## 要件
 
 - **Unreal Engine 5** (バージョン5.7向けに構成)
-- プロジェクト設定で **Hardware Ray Tracing** が有効であること (`RHI_RAYTRACING=1`)。
+- DefaultEngine.iniで **Hardware Ray Tracing** が有効であること (`r.RayTracing=True`,`r.RayTracing.Shadows=True`)。
 - **DirectX 12** (SM6)
 
 ## インストール
