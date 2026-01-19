@@ -117,7 +117,7 @@ void FSimpleShadowViewExtension::PrePostProcessPass_RenderThread(FRDGBuilder& Gr
 	if (CVarShadowEnable.GetValueOnRenderThread())
 	{
 		FScene* Scene = InView.Family->Scene->GetRenderScene();
-		if (!Scene || !InView.bSceneCaptureUsesRayTracing) return;
+		if (!Scene || !InView.IsRayTracingAllowedForView()) return;
 		
 		const FViewInfo& View = static_cast<const FViewInfo&>(InView);
 		const FRayTracingScene& RayTracingScene = Scene->RayTracingScene;
