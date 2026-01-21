@@ -52,7 +52,8 @@ RWTexture2D<float4> OutputTexture;
 RAY_TRACING_ENTRY_RAYGEN(SimpleShadowRG)
 {
 	uint2 PixelCoord = DispatchRaysIndex().xy + View.ViewRectMin.xy;
-	float2 ScreenUV = PixelCoord * View.BufferSizeAndInvSize.zw;
+	float2 PixelCenter = float2(PixelCoord) + 0.5f;
+	float2 ScreenUV = PixelCenter * View.BufferSizeAndInvSize.zw;
 	float3 SceneColor = CalcSceneColor(ScreenUV);
 	float3 CameraDir;
 	float3 WorldPos;
