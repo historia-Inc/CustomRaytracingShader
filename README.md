@@ -5,8 +5,8 @@ A custom Ray Tracing Shader plugin for Unreal Engine 5, demonstrating how to imp
 ## Overview
 
 This plugin provides examples of how to inject custom ray tracing passes into the Unreal Engine rendering pipeline. It includes implementations for:
-- **Ray Generation Shader**: Renders a custom shadow pass into a texture and composites it with the scene.
-- **Pixel Shader**: Demonstrates a raster-based approach (potentially for inline ray tracing).
+- **Ray Generation Shader**: Renders a custom shadow pass into a texture and composites it with the scene. It demonstrates how to access material attributes and per-instance primitive data directly on the GPU.
+- **Pixel Shader**: Demonstrates a raster-based approach (Inline Ray Tracing).
 
 The implementation uses `FSimpleShadowViewExtension` to manage the render passes.
 
@@ -15,9 +15,11 @@ The implementation uses `FSimpleShadowViewExtension` to manage the render passes
 - **Custom Ray Generation Shader** (`SimpleShadowRG`):
   - Uses a Ray Tracing Pipeline State Object (RTPSO).
   - Dispatches rays to compute shadows.
+  - **Accesses Material Data**: Reads attributes like Metallic/Roughness from the hit payload.
+  - **Accesses Primitive Data**: Retrieves instance transforms and **CustomPrimitiveData** via GPUScene buffers.
   - Outputs to a UAV texture.
 - **Custom Pixel Shader** (`SimpleShadowPS`):
-  - Raster pass integration example.
+  - Raster pass integration example using Inline Ray Tracing (`TraceRayInline`).
 - **Runtime Toggle**:
   - Console variables to enable/disable shaders at runtime without recompiling.
 
@@ -44,13 +46,13 @@ The implementation uses `FSimpleShadowViewExtension` to manage the render passes
 The shaders are disabled by default. You can enable them using the following console variables:
 
 ### simple Shadow Ray Generation Shader
-To enable the custom Ray Generation shader:
+To enable the custom Ray Generation shader (supports Material/Primitive data access):
 ```bash
 r.Raytracing.CustomSimpleShadow.Enable 1
 ```
 
 ### Simple Inline Shadow Pixel Shader
-To enable the custom Pixel Shader pass:
+To enable the custom Pixel Shader pass (Inline Ray Tracing):
 ```bash
 r.Raytracing.CustomInlineSimpleShadow.Enable 1
 ```
@@ -74,8 +76,8 @@ Unreal Engine 5向けのカスタムレイトレーシングシェーダープ�
 ## 概要
 
 このプラグインは、Unreal Engineのレンダリングパイプラインにカスタムレイトレーシングパスを追加するサンプルを提供します。
-- **Ray Generation シェーダー**: カスタムシャドウパスをテクスチャにレンダリングし、シーンと合成します。
-- **Pixel シェーダー**: ラスタライズベースのアプローチ（インラインレイトレーシング等）の実装例です。
+- **Ray Generation シェーダー**: カスタムシャドウパスをテクスチャにレンダリングし、シーンと合成します。マテリアル属性やインスタンスごとのプリミティブデータへアクセスする方法も提示します。
+- **Pixel シェーダー**: ラスタライズベースのアプローチ（インラインレイトレーシング）の実装例です。
 
 `FSimpleShadowViewExtension`を使用して描画パスを管理しています。
 
@@ -84,9 +86,11 @@ Unreal Engine 5向けのカスタムレイトレーシングシェーダープ�
 - **カスタム Ray Generation シェーダー** (`SimpleShadowRG`):
   - Ray Tracing Pipeline State Object (RTPSO) を使用。
   - レイをディスパッチしてシャドウを計算。
+  - **マテリアルデータへのアクセス**: ヒットペイロードからMetallicやRoughnessなどの属性を読み取ります。
+  - **プリミティブデータへのアクセス**: GPUSceneバッファを経由して、インスタンスの変換行列や **CustomPrimitiveData** を取得します。
   - UAVテクスチャに出力。
 - **カスタム Pixel シェーダー** (`SimpleShadowPS`):
-  - ラスタパスの統合例。
+  - インラインレイトレーシング（`TraceRayInline`）を使用したラスタパスの統合例。
 - **ランタイム切り替え**:
   - コンソール変数を使用して、再コンパイルなしでシェーダーの有効/無効を切り替え可能。
 
@@ -113,13 +117,13 @@ Unreal Engine 5向けのカスタムレイトレーシングシェーダープ�
 シェーダーはデフォルトで無効になっています。以下のコンソール変数を使用して有効にします。
 
 ### Simple Shadow Ray Generation Shader
-Ray Generation シェーダーを有効にする場合:
+Ray Generation シェーダー（マテリアル/プリミティブデータへのアクセス対応）を有効にする場合:
 ```bash
 r.Raytracing.CustomSimpleShadow.Enable 1
 ```
 
 ### Simple Inline Shadow Pixel Shader
-Pixel シェーダーパスを有効にする場合:
+Pixel シェーダーパス（インラインレイトレーシング）を有効にする場合:
 ```bash
 r.Raytracing.CustomInlineSimpleShadow.Enable 1
 ```
