@@ -66,6 +66,7 @@ RAY_TRACING_ENTRY_RAYGEN(SimpleShadowRG)
 	PrimaryRay.TMax = 1e20f;
 	
 	FPackedMaterialClosestHitPayload Payload = (FPackedMaterialClosestHitPayload)0;
+	Payload.SetLumenPayload();
 	FRayCone RayCone = (FRayCone)0; 
 	RayCone.SpreadAngle = View.EyeToPixelSpreadAngle;
 
@@ -89,6 +90,18 @@ RAY_TRACING_ENTRY_RAYGEN(SimpleShadowRG)
 	float3 ShadowColor = float3(1.0f, 0.0f, 0.0f);
 	if (Payload.IsHit())
 	{
+		uint InstanceID = Payload.GetSceneInstanceIndex();
+		FInstanceSceneData InstanceData = GetInstanceSceneData(InstanceID);
+		//float3 ForwardVector = normalize(InstanceData.LocalToWorld.M[0].xyz); // forward vector
+		const uint PrimitiveId = InstanceData.PrimitiveId ;
+		uint PrimitiveIndex = PrimitiveId * PRIMITIVE_SCENE_DATA_STRIDE;
+		
+		uint ItemIndex = 0;
+		uint TargetIdx = PrimitiveIndex + ItemIndex + 35; //Engine/Shaders/Private/SceneData.ush:493
+		const float4 CustomData = Scene.GPUScene.GPUScenePrimitiveSceneData[TargetIdx];
+		
+		ShadowColor = CustomData.xyz;
+		
 		float HitT = Payload.HitT;
 		float3 HitWorldPos = PrimaryRay.Origin + (PrimaryRay.Direction * HitT);
 		FPackedMaterialClosestHitPayload ShadowPayload = (FPackedMaterialClosestHitPayload)0;
