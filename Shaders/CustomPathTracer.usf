@@ -185,7 +185,7 @@ float3 TracePath(FRayDesc CameraRay, uint PixelSeed)
 		float3 BaseColor = Payload.GetBaseColor();
 		Path.Throughput *= BaseColor;
 
-		Path.RayOrigin = WorldPos + Ng * 1.0f;
+		Path.RayOrigin = WorldPos + Ng * 0.001f;
 		Path.RayDirection = Wi;
 	}
 
