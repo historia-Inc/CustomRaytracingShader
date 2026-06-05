@@ -2,6 +2,7 @@
 #include "Interfaces/IPluginManager.h"
 #include "Misc/Paths.h"
 #include "SimpleShadowViewExtension.h"
+#include "CustomPathTracerViewExtension.h"
 #include "ShaderCore.h"
 #include "DeferredShadingRenderer.h" 
 
@@ -19,17 +20,20 @@ void FCustomRaytracingShaderModule::StartupModule()
 void FCustomRaytracingShaderModule::ShutdownModule()
 {
 	ViewExtension.Reset();
+	PathTracerViewExtension.Reset();
 }
 
 void FCustomRaytracingShaderModule::OnPostEngineInit()
 {
 	ViewExtension = FSceneViewExtensions::NewExtension<FSimpleShadowViewExtension>();
+	PathTracerViewExtension = FSceneViewExtensions::NewExtension<FCustomPathTracerViewExtension>();
 }
 
 void FCustomRaytracingShaderModule::OnPrepareRayTracing(const class FViewInfo& View,
 	TArray<FRHIRayTracingShader*>& OutRayGenShaders)
 {
 	ViewExtension->OnPrepareRayTracing(View, OutRayGenShaders);
+	PathTracerViewExtension->OnPrepareRayTracing(View, OutRayGenShaders);
 }
 
 

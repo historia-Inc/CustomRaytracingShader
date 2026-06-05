@@ -1,0 +1,223 @@
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/RayTracing/RayTracingCommon.ush"
+#include "/Engine/Private/MonteCarlo.ush"
+
+RaytracingAccelerationStructure TLAS;
+
+uint GeneratePixelSeed(uint2 PixelCoord, uint FrameNumber)
+{
+	// LCG（線形合同法）の定数を利用した簡易的なハッシュ化
+	uint Hash = PixelCoord.x;
+	Hash = Hash * 1664525u + PixelCoord.y + 1013904223u;
+	Hash = Hash * 1664525u + FrameNumber + 1013904223u;
+	return Hash;
+}
+
+struct FPathState
+{
+	float3 RayOrigin;
+	float3 RayDirection;
+
+	float3 Throughput;
+	float3 Radiance;
+
+	uint RandomSeed;
+	uint BounceIndex;
+};
+
+float3 EvaluateDirectionalLight(float3 WorldPos, float3 N, float3 V, FPackedMaterialClosestHitPayload Payload)
+{
+	float3 L = normalize( View.DirectionalLightDirection);
+	float NdotL = saturate(dot(N, L));
+	if (NdotL <= 0.0)
+	{
+		return 0.0;
+	}
+	
+	FRayDesc ShadowRay;
+	FMinimalPayload ShadowRayPayload = (FMinimalPayload)0;
+	ShadowRay.Origin = WorldPos + N * 0.1f;
+	ShadowRay.Direction = L;
+	ShadowRay.TMin = 0.0f;
+	ShadowRay.TMax = 1e20f;
+
+	TraceRay(
+	TLAS,
+	RAY_FLAG_FORCE_OPAQUE,
+	RAY_TRACING_MASK_OPAQUE,
+	RAY_TRACING_SHADER_SLOT_MATERIAL,
+	RAY_TRACING_NUM_SHADER_SLOTS,
+	0,
+	ShadowRay.GetNativeDesc(),
+	ShadowRayPayload);
+	bool bVisible = !ShadowRayPayload.IsHit();
+	
+	if (!bVisible)
+	{
+		return 0.0;
+	}
+	float3 BaseColor = Payload.GetBaseColor();
+	float3 Diffuse = BaseColor / PI;
+	return Diffuse * View.DirectionalLightColor * NdotL;
+}
+
+// ローカル座標系をワールド座標系に変換
+float3 LocalToWorld(float3 LocalDir, float3 N, float3 T, float3 B)
+{
+	return LocalDir.x * T + LocalDir.y * B + LocalDir.z * N;
+}
+
+// 法線から接線と従法線を生成
+void GetTangentBasis(float3 N, out float3 T, out float3 B)
+{
+	// 法線に直交する任意のベクトルを作成
+	if (abs(N.z) < 0.9)
+	{
+		T = normalize(cross(N, float3(0.0, 0.0, 1.0)));
+	}
+	else
+	{
+		T = normalize(cross(N, float3(1.0, 0.0, 0.0)));
+	}
+	B = cross(N, T);
+}
+
+float GetRandomFloat(inout uint Seed)
+{
+	Seed = Seed * 1664525u + 1013904223u;
+	return float(Seed) / 4294967296.0f; // 2^32 で割って [0, 1) の実数にする
+}
+
+uint Hash(uint x) {
+	x = ((x >> 16u) ^ x) * 0x45d9f3b3u;
+	x = ((x >> 16u) ^ x) * 0x45d9f3b3u;
+	x = (x >> 16u) ^ x;
+	return x;
+}
+
+float GetRandomFloatHash(uint input)
+{
+	return float(Hash(input)) / 4294967296.0f;
+}
+
+float3 TracePath(FRayDesc CameraRay, uint PixelSeed)
+{
+	FPathState Path;
+	Path.RayOrigin = CameraRay.Origin;
+	Path.RayDirection = CameraRay.Direction;
+	Path.Throughput = 1.0;
+	Path.Radiance = 0.0;
+	Path.RandomSeed = PixelSeed;
+	
+	for (uint Bounce = 0; Bounce < 4; ++Bounce)
+	{
+		FPackedMaterialClosestHitPayload Payload = (FPackedMaterialClosestHitPayload)0;
+		Payload.SetCameraRay();
+
+		if (Bounce > 0)
+		{
+			Payload.SetIndirectLightingRay();
+		}
+		FRayCone RayCone = (FRayCone)0; 
+		RayCone.SpreadAngle = View.EyeToPixelSpreadAngle;
+		
+		FRayDesc PrimaryRay;
+		PrimaryRay.Origin = Path.RayOrigin;
+		PrimaryRay.Direction = Path.RayDirection;
+		PrimaryRay.TMin = 0.01f;
+		PrimaryRay.TMax = 1e20f;
+		
+		TraceMaterialRayPacked(
+			Payload,
+			TLAS,
+			RAY_FLAG_FORCE_OPAQUE,
+			RAY_TRACING_MASK_OPAQUE,
+			PrimaryRay,
+			RayCone,
+			false,
+			true
+			);
+		
+
+		if (!Payload.IsValid())
+		{
+			// Sky なしなら黒
+			break;
+		}
+
+		float HitT = Payload.HitT;
+		float3 WorldPos = Path.RayOrigin + Path.RayDirection * HitT;
+
+		float3 N = normalize(Payload.GetWorldNormal());
+		float3 Ng = normalize(Payload.GetGeometryNormal());
+		float3 V = normalize(-Path.RayDirection);
+
+		// normal が ray の裏側を向いていたら補正
+		if (dot(N, V) < 0.0)
+		{
+			N = -N;
+		}
+
+		// Direct lighting
+		if (Bounce > 0)
+		{
+			float3 Ld = EvaluateDirectionalLight(WorldPos, N, V, Payload);
+			Path.Radiance += Path.Throughput * Ld;
+		}
+
+		uint SeedX = Path.RandomSeed + (Bounce * 2u);
+		uint SeedY = Path.RandomSeed + (Bounce * 2u) + 1u;
+		// Next bounce - ランダムサンプルを生成
+		float2 RandSample;
+		RandSample.x = GetRandomFloatHash(SeedX);
+		RandSample.y = GetRandomFloatHash(SeedY);
+
+		// ローカル座標系でサンプリング
+		float3 LocalWi = CosineSampleHemisphere(RandSample.xy).xyz;
+		
+		// ワールド座標系に変換
+		float3 T, B;
+		GetTangentBasis(N, T, B);
+		float3 Wi = LocalToWorld(LocalWi, N, T, B);
+
+		// スループット更新 (BRDF * cos(theta) / pdf)
+		// CosineSampleHemisphereは既にpdfを考慮しているため、BaseColor / π をかける
+		float3 BaseColor = Payload.GetBaseColor();
+		Path.Throughput *= BaseColor;
+
+		Path.RayOrigin = WorldPos + Ng * 1.0f;
+		Path.RayDirection = Wi;
+	}
+
+	return Path.Radiance;
+}
+
+RWTexture2D<float4> OutputTexture;
+RAY_TRACING_ENTRY_RAYGEN(LambertPathTracerRG)
+{
+	uint2 PixelCoord = DispatchRaysIndex().xy + View.ViewRectMin.xy;
+	float2 PixelCenter = float2(PixelCoord) + 0.5f;
+	float2 ScreenUV = PixelCenter * View.BufferSizeAndInvSize.zw;
+	float3 SceneColor = CalcSceneColor(ScreenUV);
+	float3 CameraDir;
+	float3 WorldPos;
+	ReconstructTranslatedWorldPositionAndCameraDirectionFromDeviceZ(PixelCoord, 0.001f, WorldPos, CameraDir);
+	
+	FRayDesc PrimaryRay;
+	PrimaryRay.Origin = View.TranslatedWorldCameraOrigin;
+	PrimaryRay.Direction = CameraDir;
+	PrimaryRay.TMin = 0.0f;
+	PrimaryRay.TMax = 1e20f;
+
+	//float3 OutputColor = TracePath(PrimaryRay, PixelSeed);
+	float3 AccumColor = float3(0.0f, 0.0f, 0.0f);//OutputTexture[DispatchRaysIndex().xy].rgb;
+	uint PixelSeed = GeneratePixelSeed(PixelCoord, View.FrameNumber);
+	for (int i = 0; i < 1; ++i)
+	{
+		// 毎回異なるサブピクセルオフセットやシードを与える
+		AccumColor += TracePath(PrimaryRay, PixelSeed + i);		
+	}
+	//if (AccumColor.x > 1.0f)AccumColor = AccumColor / (1.0f + AccumColor);
+	// TODO:ここで合成するのではなくデノイザを掛けてから合成する
+	OutputTexture[DispatchRaysIndex().xy] = float4(AccumColor + SceneColor, 1.0f);
+}
