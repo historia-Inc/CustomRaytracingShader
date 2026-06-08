@@ -1,0 +1,11 @@
+﻿#include "/Engine/Public/Platform.ush"
+
+Texture2D InputTexture;
+
+void Main(
+	float4 InPosition : SV_POSITION,
+	out float4 OutColor : SV_Target0)
+{
+	int3 TexCoord = int3(InPosition.xy, 0);
+	OutColor = InputTexture.Load(TexCoord);
+}

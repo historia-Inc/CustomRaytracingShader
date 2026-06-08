@@ -12,6 +12,14 @@ struct FPathState
 
 	float3 Throughput;
 	float3 Radiance;
+	float3 IndirectRadiance;
+};
+
+struct FPathResult
+{
+	float3 Radiance;
+	float HitDistance;
+	float3 FirstBounceWi;
 };
 
 float3 EvaluateDirectionalLight(float3 WorldPos, float3 N, float3 V, FPackedMaterialClosestHitPayload Payload)
@@ -84,13 +92,16 @@ uint Hash(uint x) {
 	return x;
 }
 
-float3 TracePath(FRayDesc CameraRay, uint SampleCount)
+FPathResult TracePath(FRayDesc CameraRay, uint SampleCount)
 {
 	FPathState Path;
 	Path.RayOrigin = CameraRay.Origin;
 	Path.RayDirection = CameraRay.Direction;
 	Path.Throughput = 1.0;
 	Path.Radiance = 0.0;
+	Path.IndirectRadiance = 0.0;
+	float3 FirstBounceWi = 0.0f;
+	float FirstBounceHitDistance = 0.0f;
 	
 	for (uint Bounce = 0; Bounce < 4; ++Bounce)
 	{
@@ -129,6 +140,7 @@ float3 TracePath(FRayDesc CameraRay, uint SampleCount)
 		}
 
 		float HitT = Payload.HitT;
+		
 		float3 WorldPos = Path.RayOrigin + Path.RayDirection * HitT;
 
 		float3 N = normalize(Payload.GetWorldNormal());
@@ -157,7 +169,11 @@ float3 TracePath(FRayDesc CameraRay, uint SampleCount)
 		float3 T, B;
 		GetTangentBasis(N, T, B);
 		float3 Wi = LocalToWorld(LocalWi, N, T, B);
-
+		if (Bounce == 0)
+		{
+			FirstBounceHitDistance = HitT;
+			FirstBounceWi = Wi;
+		}
 		// スループット更新 (BRDF * cos(theta) / pdf)
 		// CosineSampleHemisphereは既にpdfを考慮しているため、BaseColor / π をかける
 		float3 BaseColor = Payload.GetBaseColor();
@@ -167,16 +183,21 @@ float3 TracePath(FRayDesc CameraRay, uint SampleCount)
 		Path.RayDirection = Wi;
 	}
 
-	return Path.Radiance;
+	FPathResult Result;
+	Result.Radiance = Path.Radiance;
+	Result.HitDistance = FirstBounceHitDistance;
+	Result.FirstBounceWi = FirstBounceWi;
+	return Result;
 }
 
 RWTexture2D<float4> OutputTexture;
+RWTexture2D<float4> OutputSH;
 RAY_TRACING_ENTRY_RAYGEN(LambertPathTracerRG)
 {
 	uint2 PixelCoord = DispatchRaysIndex().xy + View.ViewRectMin.xy;
 	float2 PixelCenter = float2(PixelCoord) + 0.5f;
 	float2 ScreenUV = PixelCenter * View.BufferSizeAndInvSize.zw;
-	float3 SceneColor = CalcSceneColor(ScreenUV);
+	//float3 SceneColor = CalcSceneColor(ScreenUV);
 	float3 CameraDir;
 	float3 WorldPos;
 	ReconstructTranslatedWorldPositionAndCameraDirectionFromDeviceZ(PixelCoord, 0.001f, WorldPos, CameraDir);
@@ -188,12 +209,16 @@ RAY_TRACING_ENTRY_RAYGEN(LambertPathTracerRG)
 	PrimaryRay.TMax = 1e20f;
 
 	float3 AccumColor = float3(0.0f, 0.0f, 0.0f);//OutputTexture[DispatchRaysIndex().xy].rgb;
-	for (int i = 0; i < 4; ++i)
+	float3 AccumSH = float3(0.0f, 0.0f, 0.0f);
+	float AccumHitDistance = 0.0f;
+	for (int i = 0; i < 1; ++i)
 	{
 		// 毎回異なるサブピクセルオフセットやシードを与える
-		AccumColor += TracePath(PrimaryRay, i);		
+		FPathResult Result = TracePath(PrimaryRay, i);		
+		AccumColor += Result.Radiance;
+		AccumHitDistance += Result.HitDistance;
+		AccumSH += Result.Radiance * Result.FirstBounceWi;
 	}
-	//if (AccumColor.x > 1.0f)AccumColor = AccumColor / (1.0f + AccumColor);
-	// TODO:ここで合成するのではなくデノイザを掛けてから合成する
-	OutputTexture[DispatchRaysIndex().xy] = float4(AccumColor + SceneColor, 1.0f);
+	OutputTexture[DispatchRaysIndex().xy] = float4(AccumColor, AccumHitDistance);
+	OutputSH[DispatchRaysIndex().xy] = float4(AccumSH, 1.0f);
 }
