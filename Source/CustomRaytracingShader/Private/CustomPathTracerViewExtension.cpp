@@ -101,8 +101,10 @@ void FCustomPathTracerViewExtension::PrePostProcessPass_RenderThread(FRDGBuilder
 		FIntPoint ViewportSize = InView.UnconstrainedViewRect.Size();
 		if (!HistoryRenderTarget.IsValid() || HistoryRenderTarget->GetDesc().Extent != ViewportSize)
 		{
+			// TODO:ViewSizeだとデノイザを掛けたときにサイズが合わなくなる。
+			// TextureSizeだと無駄な領域まで計算が走るのでViewSizeに収まっているところだけ計算するようにする
 			FPooledRenderTargetDesc Desc = FPooledRenderTargetDesc::Create2DDesc(
-				ViewportSize,
+				TextureSize,
 				PF_FloatRGBA,
 				FClearValueBinding::None,
 				TexCreate_None,
@@ -117,7 +119,7 @@ void FCustomPathTracerViewExtension::PrePostProcessPass_RenderThread(FRDGBuilder
 		FRDGTextureUAV* OutputUAV = GraphBuilder.CreateUAV(HistoryTextureRDG);
 		
 		FRDGTextureDesc HitDistanceDesc = FRDGTextureDesc::Create2D(
-			ViewportSize,
+			TextureSize,
 			PF_FloatRGBA,
 			FClearValueBinding::None,
 			TexCreate_ShaderResource | TexCreate_UAV
