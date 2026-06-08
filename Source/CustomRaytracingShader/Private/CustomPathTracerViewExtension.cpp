@@ -31,6 +31,7 @@ public:
 		SHADER_PARAMETER_RDG_UNIFORM_BUFFER(FNaniteRayTracingUniformParameters, NaniteRayTracing)
 		SHADER_PARAMETER_RDG_BUFFER_SRV(RaytracingAccelerationStructure, TLAS)
 		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, ViewUniformBuffer)
+		SHADER_PARAMETER_STRUCT_REF(FBlueNoise, BlueNoise)
 	END_SHADER_PARAMETER_STRUCT()
 	
 	static void ModifyCompilationEnvironment(const FGlobalShaderPermutationParameters& Parameters, FShaderCompilerEnvironment& OutEnvironment)
@@ -113,6 +114,8 @@ void FCustomPathTracerViewExtension::PrePostProcessPass_RenderThread(FRDGBuilder
 			PassParameters->NaniteRayTracing = Nanite::GetPublicGlobalRayTracingUniformBuffer();
 			FSceneTextures SceneTextures = View.GetSceneTextures();
 			PassParameters->SceneTextures = GetSceneTextureShaderParameters(Inputs.SceneTextures);
+			FBlueNoise BlueNoise = GetBlueNoiseGlobalParameters();
+			PassParameters->BlueNoise = CreateUniformBufferImmediate(BlueNoise, EUniformBufferUsage::UniformBuffer_SingleFrame);
 			
 			GraphBuilder.AddPass(
 	        RDG_EVENT_NAME("LambertPathTracerRG"),

@@ -1,17 +1,9 @@
 #include "/Engine/Private/Common.ush"
 #include "/Engine/Private/RayTracing/RayTracingCommon.ush"
 #include "/Engine/Private/MonteCarlo.ush"
+#include "/Engine/Private/BlueNoise.ush"
 
 RaytracingAccelerationStructure TLAS;
-
-uint GeneratePixelSeed(uint2 PixelCoord, uint FrameNumber)
-{
-	// LCG（線形合同法）の定数を利用した簡易的なハッシュ化
-	uint Hash = PixelCoord.x;
-	Hash = Hash * 1664525u + PixelCoord.y + 1013904223u;
-	Hash = Hash * 1664525u + FrameNumber + 1013904223u;
-	return Hash;
-}
 
 struct FPathState
 {
@@ -20,9 +12,6 @@ struct FPathState
 
 	float3 Throughput;
 	float3 Radiance;
-
-	uint RandomSeed;
-	uint BounceIndex;
 };
 
 float3 EvaluateDirectionalLight(float3 WorldPos, float3 N, float3 V, FPackedMaterialClosestHitPayload Payload)
@@ -95,19 +84,13 @@ uint Hash(uint x) {
 	return x;
 }
 
-float GetRandomFloatHash(uint input)
-{
-	return float(Hash(input)) / 4294967296.0f;
-}
-
-float3 TracePath(FRayDesc CameraRay, uint PixelSeed)
+float3 TracePath(FRayDesc CameraRay, uint SampleCount)
 {
 	FPathState Path;
 	Path.RayOrigin = CameraRay.Origin;
 	Path.RayDirection = CameraRay.Direction;
 	Path.Throughput = 1.0;
 	Path.Radiance = 0.0;
-	Path.RandomSeed = PixelSeed;
 	
 	for (uint Bounce = 0; Bounce < 4; ++Bounce)
 	{
@@ -164,13 +147,8 @@ float3 TracePath(FRayDesc CameraRay, uint PixelSeed)
 			float3 Ld = EvaluateDirectionalLight(WorldPos, N, V, Payload);
 			Path.Radiance += Path.Throughput * Ld;
 		}
-
-		uint SeedX = Path.RandomSeed + (Bounce * 2u);
-		uint SeedY = Path.RandomSeed + (Bounce * 2u) + 1u;
-		// Next bounce - ランダムサンプルを生成
-		float2 RandSample;
-		RandSample.x = GetRandomFloatHash(SeedX);
-		RandSample.y = GetRandomFloatHash(SeedY);
+		
+		float2 RandSample = BlueNoiseVec2(DispatchRaysIndex().xy + View.ViewRectMin.xy, View.FrameNumber + SampleCount);
 
 		// ローカル座標系でサンプリング
 		float3 LocalWi = CosineSampleHemisphere(RandSample.xy).xyz;
@@ -209,13 +187,11 @@ RAY_TRACING_ENTRY_RAYGEN(LambertPathTracerRG)
 	PrimaryRay.TMin = 0.0f;
 	PrimaryRay.TMax = 1e20f;
 
-	//float3 OutputColor = TracePath(PrimaryRay, PixelSeed);
 	float3 AccumColor = float3(0.0f, 0.0f, 0.0f);//OutputTexture[DispatchRaysIndex().xy].rgb;
-	uint PixelSeed = GeneratePixelSeed(PixelCoord, View.FrameNumber);
-	for (int i = 0; i < 1; ++i)
+	for (int i = 0; i < 4; ++i)
 	{
 		// 毎回異なるサブピクセルオフセットやシードを与える
-		AccumColor += TracePath(PrimaryRay, PixelSeed + i);		
+		AccumColor += TracePath(PrimaryRay, i);		
 	}
 	//if (AccumColor.x > 1.0f)AccumColor = AccumColor / (1.0f + AccumColor);
 	// TODO:ここで合成するのではなくデノイザを掛けてから合成する
