@@ -13,7 +13,7 @@
 
 static TAutoConsoleVariable<int32> CVarPathTracerEnable(
 	TEXT("r.Raytracing.CustomPathTracer.Enable"),
-	0,
+	1,
 	TEXT("Enables the Raytracing CustomPathTracer. \n Note: Crash if ray tracing shadows are not enabled. \n0: Off, 1: On"),
 	ECVF_RenderThreadSafe
 );
@@ -85,13 +85,13 @@ FCustomPathTracerViewExtension::FCustomPathTracerViewExtension(const FAutoRegist
 void FCustomPathTracerViewExtension::PrePostProcessPass_RenderThread(FRDGBuilder& GraphBuilder, const FSceneView& InView,
 	const FPostProcessingInputs& Inputs)
 {
-
 	if (CVarPathTracerEnable.GetValueOnRenderThread())
 	{
 		FScene* Scene = InView.Family->Scene->GetRenderScene();
 		if (!Scene || !InView.IsRayTracingAllowedForView()) return;
 		
 		const FViewInfo& View = static_cast<const FViewInfo&>(InView);
+		if (View.FinalPostProcessSettings.DynamicGlobalIlluminationMethod != EDynamicGlobalIlluminationMethod::Plugin)return;
 		const FRayTracingScene& RayTracingScene = Scene->RayTracingScene;
 		const FIntRect PrimaryViewRect = View.ViewRect;
 		FScreenPassTexture SceneColor((*Inputs.SceneTextures)->SceneColorTexture, PrimaryViewRect);
